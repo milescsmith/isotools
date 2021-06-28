@@ -1,0 +1,45 @@
+[tool.poetry]
+name = "isotools"
+version = "0.1.4rc3"
+description = "Framework for the analysis of long read transcriptome sequencing data"
+authors = ["Matthias Lienhard <lienhard@molgen.mpg.de>"]
+license = "MIT"
+readme = "README.md"
+
+repository = "https://github.molgen.mpg.de/lienhard/isotools"
+homepage = "http://medips.molgen.mpg.de/isoseq/index.html"
+
+classifiers = [
+        "Programming Language :: Python :: 3",
+        "License :: OSI Approved :: MIT License",
+        "Operating System :: OS Independent",
+]
+
+[tool.poetry.scripts]
+"isotools" = "isotools.run_isotools:main"
+
+[tool.poetry.dependencies]
+python = ">=3.7.1,<3.10"
+numpy = "^1.21.0"
+pandas = "^1.2.5"
+tqdm = "^4.61.1"
+intervaltree = "^3.1.0"
+matplotlib = "^3.4.2"
+seaborn = "^0.11.1"
+biopython = "^1.79"
+pysam = "^0.16.0"
+umap-learn = "^0.5.1"
+sklearn = "^0.0"
+scipy = "^1.7.0"
+statsmodels = "^0.12.2"
+
+[tool.poetry.dev-dependencies]
+black = "^21.6b0"
+pyre-check = "^0.9.3"
+flake8 = "^3.9.2"
+mypy = "^0.910"
+isort = "^5.9.1"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

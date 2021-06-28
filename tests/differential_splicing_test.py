@@ -1,7 +1,10 @@
-import isotools.splice_graph
 import unittest
+from random import randint, sample
+
 import numpy as np
-from random import sample, randint
+
+import isotools.splice_graph
+
 
 class TestSpliceGraph(unittest.TestCase):
     def test_simple(self):
@@ -21,6 +24,7 @@ if __name__ == "__main__":
 
 import logging
 from importlib import reload
+
 reload(isotools.splice_graph)
 
 isotools.splice_graph.log.setLevel(logging.DEBUG)
@@ -46,8 +50,9 @@ res2=(0.4761144448906714, 0.19394337282466823)
 res1=(0.873307668631287, 0.0014929882277201502)
 res0=(0.6652330116312957, 0.230021439336415)
 ​
-import isotools.stats
 from scipy.optimize import minimize
+
+import isotools.stats
 
 reload(isotools.stats)
 isotools.stats.betabinom_lr_test([x1,x2],[n1,n2])
@@ -95,7 +100,8 @@ th=1/(a+b+1)
 
 
 
-from intervaltree import IntervalTree, Interval
+from intervaltree import Interval, IntervalTree
+
 
 class Gene(Interval):
     def __new__(cls,begin, end, data, transcriptome):
@@ -106,6 +112,7 @@ class Gene(Interval):
 Gene(1,2,[],5)
 
 
-from pysam import TabixFile, AlignmentFile, FastaFile
+from pysam import AlignmentFile, FastaFile, TabixFile
+
 fn='~/projects/molgen/project42/pacbio/references/gencode/gencode.v29.annotation.gff3.gz'
 gff=TabixFile(fn)
