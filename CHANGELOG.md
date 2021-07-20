@@ -1,30 +1,19 @@
 # Change Log
 
-## ideas, issues and planed extensions or changes that are not yet implemented
-* run_isotools console script is totally outdated and broken...
-* optimize add_biases for run after new samples have been added - should not recompute everything
-* extend flanking exons for MISO/rMATS export (not really needed, works fine as is)
-* consider integrating reference and isoseq genes one in segment graph
-    * Gene.get_segment_graph(force_recaculation=False, min_transcripts=None)
-    * would be major change and potentially break things
-* keep track of actual (read) TSS and PAS within first/last exon
-* implement some functionality of altsplice_test in find_splice_bubbles()
-    * find_splice_bubbles(weights=g.coverage) ...
-    * implement filter for functions calling find_splice_bubbles by setting weights=0
-* consider using common splice graph e.g. to import bam:
-    * nodes/vertices are donor/acceptor sites
-    * edges are exons/introns
-    * pro:
-        * commonly used
-        * trivial to reconstruct transcripts
-        * most functions should work (faster?)
-        * can be extended easily
-    * con:
-        * segment graph still needed for bubble definition - two graphs stored 
+## TODO: ideas, issues and planed extensions or changes that are not yet implemented
+* avoid the need for add_filters - construct and evaluate lambdas during filtering
+* run_isotools console script is totally outdated and broken
+* unit tests are outdated/broken/not automated
+* optimize add_qc_metrics for run after new samples have been added - should not recompute everything
+
+
+## [0.2.0]
+* restructure to meet PyPI recommendations
+* New feature: isoseq.altsplice_test accepts more than 2 groups, and computes ML parameters for all groups
 
 ## [0.1.5]
-* todo: avoid the need for add_filters - construct and evaluate lambdas during filtering
-
+* New feature: restrict tests on provided splice_types
+* New feature: provide position to find given alternative splicing events
 
 ## [0.1.4]
 * Fix: Issue with noncanonical splicing detection introduced in 0.1.3
@@ -42,9 +31,7 @@
 * New: use_satag parameter for add_sample_from_bam 
 * Change: use median TSS/PAS (of all reads with same splice pattern) as transcript start/end (e.g. exons[0][0]/exons[-1][1])
 * Fix: Novel exon skipping annotation now finds all exonic regions that are skipped.
-* New: select_transcripts in sashimi_plots and draw_other_genes in gene_track. Dropped remove_transcript parameter.
-* New: add info about short (default:<=25 bases) reference exons (Gene.data['reference']['short_exons'])
-
+* change: Default filter of FRAGMENTS now only tags reads that do not use a reference TSS or PAS
 ## [0.1.3]
 * Fix: improved performance of noncanonical splicing detection by avoiding redundant lookups. 
 
