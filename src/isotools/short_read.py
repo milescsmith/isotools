@@ -1,12 +1,9 @@
 # methods and classes for the integration of short read data
-import logging
-
 import numpy as np
 from pysam import AlignmentFile, FastaFile, TabixFile
 
+from .logger import isotools_logger as logger
 from ._utils import junctions_from_cigar
-
-logger = logging.getLogger("isotools")
 
 
 class Coverage:

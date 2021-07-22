@@ -1,14 +1,12 @@
-import logging
 from math import log10
 
 import matplotlib.colors as plt_col
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
-from matplotlib.ticker import FuncFormatter 
 import numpy as np
-from math import log10
-import logging
-logger=logging.getLogger('isotools')
+from matplotlib.ticker import FuncFormatter
+
+from .logger import isotools_logger as logger
 
 
 def _label_overlap(pos1, pos2, width, height):

@@ -1,27 +1,37 @@
 import copy
-import logging
 from contextlib import ExitStack
+from pathlib import Path
+from typing import List, Dict, Optional
 
 import numpy as np
 import pandas as pd
 from intervaltree import Interval, IntervalTree
-from numpy.lib.function_base import percentile, quantile
 from pysam import AlignmentFile, FastaFile, TabixFile
 from tqdm import tqdm
 
-from ._utils import (cigar_string2tuples, is_same_gene, junctions_from_cigar,
-                     overlap, pairwise, splice_identical)
-from .decorators import debug, deprecated, experimental
+from .logger import isotools_logger as logger
+from ._utils import (
+    cigar_string2tuples,
+    is_same_gene,
+    junctions_from_cigar,
+    overlap,
+    pairwise,
+    splice_identical,
+)
+from .decorators import deprecated, experimental
 from .gene import Gene
 from .short_read import Coverage
-
-logger = logging.getLogger("isotools")
 
 #### io functions for the transcriptome class
 SPLICE_CATEGORY = ["FSM", "ISM", "NIC", "NNC", "NOVEL"]
 
 
-def add_short_read_coverage(self, bam_files, names=None, load=False):
+def add_short_read_coverage(
+    self,
+    bam_files: Dict[str, Path],
+    names: Optional[List[str]] = None,
+    load: bool = False,
+) -> None:
     """Adds short read coverage to the genes.
 
     This does, by default (e.g. if load==False), this method does not actually read the bams,
@@ -50,13 +60,13 @@ def add_short_read_coverage(self, bam_files, names=None, load=False):
         for i, bamfile in enumerate(self.infos["short_reads"].file):
             logger.info("Adding short read coverag from %s", bamfile)
             with AlignmentFile(bamfile, "rb") as align:
-                for g in tqdm(self):
+                for g in tqdm(self, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}'):
                     g.data.setdefault("short_reads", list())
                     if len(g.data["short_reads"]) == i:
                         g.data["short_reads"].append(Coverage.from_alignment(align, g))
 
 
-def remove_short_read_coverage(self):
+def remove_short_read_coverage(self) -> None:
     """Removes short read coverage.
 
     Removes all short read coverage information from self."""
@@ -70,7 +80,7 @@ def remove_short_read_coverage(self):
 
 
 @experimental
-def remove_samples(self, sample_names):
+def remove_samples(self, sample_names: List[str]):
     """Removes samples from the dataset.
 
     :params sample_names: A list of sample names to remove."""
@@ -103,12 +113,12 @@ def remove_samples(self, sample_names):
 
 def add_sample_from_bam(
     self,
-    fn,
-    sample_name,
-    fuzzy_junction=5,
-    add_chromosomes=True,
-    chimeric_mincov=2,
-    use_satag=False,
+    fn: Path,
+    sample_name: str,
+    fuzzy_junction: int = 5,
+    add_chromosomes: bool = True,
+    chimeric_mincov: int = 2,
+    use_satag: bool = False,
     **kwargs,
 ):
     """Imports expressed transcripts from bam and adds it to the 'Transcriptome' object.
@@ -141,13 +151,10 @@ def add_sample_from_bam(
         total_nc_reads = unmapped = n_secondary = 0
         total_nc_reads_chr = {}
         chimeric = dict()
-        with tqdm(total=total_alignments, unit="reads") as pbar:
-
-            for (
-                chrom
-            ) in (
-                chromosomes
-            ):  # todo: potential issue here - secondary/chimeric alignments to non listed chromosomes are ignored
+        with tqdm(total=total_alignments, unit="reads", bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}') as pbar:
+            for chrom in chromosomes:
+                # todo: potential issue here - secondary/chimeric alignments to
+                # non listed chromosomes are ignored
                 total_nc_reads_chr[chrom] = 0
                 pbar.set_postfix(chr=chrom)
                 # transcripts=IntervalTree()
@@ -693,7 +700,7 @@ def _add_novel_genes(
         self.data.setdefault(chrom, IntervalTree()).add(
             Gene(start, end, new_data, self)
         )
-        logging.debug(f"merging transcripts of novel gene {n_novel}: {trL}")
+        logger.debug(f"merging transcripts of novel gene {n_novel}: {trL}")
 
     self.infos["novel_counter"] = n_novel
 
@@ -798,7 +805,7 @@ def import_gtf_transcripts(fn, transcriptome, chromosomes=None):
     skipped = set()
     genes = dict()
     gene_dict = {}
-    for line in tqdm(gtf.fetch(), smoothing=0.1):
+    for line in tqdm(gtf.fetch(), smoothing=0.1, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}'):
         ls = line.split(sep="\t")
         if chromosomes is not None and ls[0] not in chromosomes:
             # warnings.warn('skipping line from chr '+ls[0])
@@ -945,7 +952,7 @@ def import_gff_transcripts(
     cds_start = dict()
     cds_stop = dict()
     # takes quite some time... add a progress bar?
-    for line in tqdm(gff.fetch(), smoothing=0.1):
+    for line in tqdm(gff.fetch(), smoothing=0.1, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}'):
         ls = line.split(sep="\t")
         if ls[0] not in chrom_ids:
             continue
@@ -1293,44 +1300,44 @@ def chimeric_table(
     return chim_tab
 
     # todo: integrate short read coverage from star files
-    breakpoints = {}  # todo: this should be the isoseq breakpoints
-    offset = 10 + len(self.infos["sample_table"])
-    for sa_idx, sa in enumerate(star_chimeric):
-        star_tab = pd.read_csv(star_chimeric[sa], sep="\t")
-        for _, row in star_tab.iterrows():
-            if row["chr_donorA"] in breakpoints and row["chr_acceptorB"] in breakpoints:
-                idx1 = {
-                    bp.data
-                    for bp in breakpoints[row["chr_donorA"]][row["brkpt_donorA"]]
-                }
-                if idx1:
-                    idx2 = {
-                        bp.data
-                        for bp in breakpoints[row["chr_acceptorB"]][
-                            row["brkpt_acceptorB"]
-                        ]
-                    }
-                    idx_ol = {idx for idx, snd in idx2 if (idx, not snd) in idx1}
-                    for idx in idx_ol:
-                        chim_tab[idx][offset + sa_idx] += 1
+    # breakpoints = {}  # todo: this should be the isoseq breakpoints
+    # offset = 10 + len(self.infos["sample_table"])
+    # for sa_idx, sa in enumerate(star_chimeric):
+    #     star_tab = pd.read_csv(star_chimeric[sa], sep="\t")
+    #     for _, row in star_tab.iterrows():
+    #         if row["chr_donorA"] in breakpoints and row["chr_acceptorB"] in breakpoints:
+    #             idx1 = {
+    #                 bp.data
+    #                 for bp in breakpoints[row["chr_donorA"]][row["brkpt_donorA"]]
+    #             }
+    #             if idx1:
+    #                 idx2 = {
+    #                     bp.data
+    #                     for bp in breakpoints[row["chr_acceptorB"]][
+    #                         row["brkpt_acceptorB"]
+    #                     ]
+    #                 }
+    #                 idx_ol = {idx for idx, snd in idx2 if (idx, not snd) in idx1}
+    #                 for idx in idx_ol:
+    #                     chim_tab[idx][offset + sa_idx] += 1
 
-    chim_tab = pd.DataFrame(
-        chim_tab,
-        columns=[
-            "trid",
-            "len",
-            "gene1",
-            "part1",
-            "breakpoint1",
-            "gene2",
-            "part2",
-            "breakpoint2",
-            "total_cov",
-        ]
-        + [s + "_cov" for s in self.infos["sample_table"].name]
-        + [s + "_shortread_cov" for s in star_chimeric],
-    )
-    return chim_tab
+    # chim_tab = pd.DataFrame(
+    #     chim_tab,
+    #     columns=[
+    #         "trid",
+    #         "len",
+    #         "gene1",
+    #         "part1",
+    #         "breakpoint1",
+    #         "gene2",
+    #         "part2",
+    #         "breakpoint2",
+    #         "total_cov",
+    #     ]
+    #     + [s + "_cov" for s in self.infos["sample_table"].name]
+    #     + [s + "_shortread_cov" for s in star_chimeric],
+    # )
+    # return chim_tab
 
 
 def write_gtf(
@@ -1346,7 +1353,7 @@ def write_gtf(
 
     with open(fn, "w") as f:
         logger.info(f"writing gtf file to {fn}")
-        for gene in tqdm(self):
+        for gene in tqdm(self, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}'):
             lines = gene.to_gtf(
                 source=source,
                 use_gene_name=use_gene_name,
@@ -1476,9 +1483,11 @@ def export_alternative_splicing(
                 continue
             elif not reference and g.coverage[sidx, :].sum() < min_total:
                 continue
-            
-            seg_graph=g.ref_segment_graph if reference else g.segment_graph
-            for setA,setB,nodeX,nodeY, splice_type in seg_graph.find_splice_bubbles(types=('ES','3AS', '5AS','IR', 'ME')):
+
+            seg_graph = g.ref_segment_graph if reference else g.segment_graph
+            for setA, setB, nodeX, nodeY, splice_type in seg_graph.find_splice_bubbles(
+                types=("ES", "3AS", "5AS", "IR", "ME")
+            ):
                 if not reference:
                     junction_cov = g.coverage[np.ix_(sidx, setA)].sum(1)
                     total_cov = g.coverage[np.ix_(sidx, setB)].sum(1) + junction_cov
@@ -1593,7 +1602,7 @@ def _miso_alt_splice_export(setA, setB, nodeX, nodeY, st, seg_graph, g, offset):
 
 
 def _mats_alt_splice_export(setA, setB, nodeX, nodeY, st, seg_graph, g, offset):
-    #'ID','GeneID','geneSymbol','chr','strand'
+    # 'ID','GeneID','geneSymbol','chr','strand'
     # and ES/EE for the relevant exons
     # in case of 'SE':['skipped', 'upstream', 'downstream'],
     # in case of 'RI':['retained', 'upstream', 'downstream'],

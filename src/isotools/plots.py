@@ -1,9 +1,11 @@
-import logging
-
 import matplotlib.pyplot as plt
 import numpy as np
-import logging
-logger=logging.getLogger('isotools')
+import pandas as pd
+import seaborn as sns
+from matplotlib.colors import is_color_like, to_hex
+from scipy.stats import beta, nbinom
+
+from .logger import isotools_logger as logger
 
 
 def plot_diff_results(
@@ -130,15 +132,14 @@ def plot_embedding(
     :param \**kwargs: Additional keyword parameters are passed to PCA() or UMAP().
     :return: A dataframe with the proportions of the alternative events, the transformed data and the embedding object."""
 
-    assert method in ['PCA', 'UMAP'], 'method must be PCA or UMAP'
-    if method=='UMAP':
-        #umap import takes ~15 seconds, hence the lazy import here
-        from umap import UMAP as Embedding# pylint: disable-msg=E0611
+    assert method in ["PCA", "UMAP"], "method must be PCA or UMAP"
+    if method == "UMAP":
+        # umap import takes ~15 seconds, hence the lazy import here
+        from umap import UMAP as Embedding  # pylint: disable-msg=E0611
     else:
         from sklearn.decomposition import PCA as Embedding
 
-
-    plot_components=np.array(plot_components)
+    plot_components = np.array(plot_components)
     if isinstance(splice_types, str):
         splice_types = [splice_types]
     if "all" not in splice_types:
@@ -193,19 +194,24 @@ def plot_embedding(
     p = ((k.values + scaled_mean[:, np.newaxis]) / (n.values + prior_count)).T
     topvar = p[:, p.var(0).argsort()[-top_var:]]  # sort from low to high var
 
-    #compute embedding
-    kwargs.setdefault('n_components',max(plot_components))
-    assert kwargs['n_components']>=max(plot_components), 'n_components is smaller than the largest selected component'
-    
-        # Linear dimensionality reduction using Singular Value Decomposition of the data to project it to a lower dimensional space. 
-        # The input data is centered but not scaled for each feature before applying the SVD.
-    embedding=Embedding(**kwargs).fit(topvar)
-    axparams=dict(title= f'{method} ({",".join(splice_types)})')
-    if method=='PCA':
-            axparams['xlabel'] =f'PC{plot_components[0]} ({embedding.explained_variance_ratio_[plot_components[0]-1]*100:.2f} %)' 
-            axparams['ylabel'] =f'PC{plot_components[1]} ({embedding.explained_variance_ratio_[plot_components[1]-1]*100:.2f} %)' 
-    transformed=pd.DataFrame(embedding.transform(topvar), index=samples)
+    # compute embedding
+    kwargs.setdefault("n_components", max(plot_components))
+    assert kwargs["n_components"] >= max(
+        plot_components
+    ), "n_components is smaller than the largest selected component"
 
+    # Linear dimensionality reduction using Singular Value Decomposition of the data to project it to a lower dimensional space.
+    # The input data is centered but not scaled for each feature before applying the SVD.
+    embedding = Embedding(**kwargs).fit(topvar)
+    axparams = dict(title=f'{method} ({",".join(splice_types)})')
+    if method == "PCA":
+        axparams[
+            "xlabel"
+        ] = f"PC{plot_components[0]} ({embedding.explained_variance_ratio_[plot_components[0]-1]*100:.2f} %)"
+        axparams[
+            "ylabel"
+        ] = f"PC{plot_components[1]} ({embedding.explained_variance_ratio_[plot_components[1]-1]*100:.2f} %)"
+    transformed = pd.DataFrame(embedding.transform(topvar), index=samples)
 
     if ax is None:
         _, ax = plt.subplots()

@@ -1,23 +1,23 @@
-from scipy.stats import binom,norm, chi2, betabinom, fisher_exact,beta # pylint: disable-msg=E0611
-from scipy.special import gammaln, polygamma,gamma# pylint: disable-msg=E0611
-from scipy.optimize import minimize
-import statsmodels.stats.multitest as multi
+import itertools
 import logging
-import warnings
 
 import numpy as np
 import pandas as pd
 import statsmodels.stats.multitest as multi
 from scipy.optimize import minimize
-from scipy.special import (gamma, gammaln,  # pylint: disable-msg=E0611
-                           polygamma)
-from scipy.stats import (beta, betabinom, binom,  # pylint: disable-msg=E0611
-                         chi2, fisher_exact, norm)
-from sklearn.decomposition import PCA
+from scipy.special import gammaln, polygamma  # pylint: disable-msg=E0611
+from scipy.stats import (
+    betabinom,
+    binom,
+    chi2,  # pylint: disable-msg=E0611
+    fisher_exact,
+    norm,
+)
 from tqdm import tqdm
+
+from .logger import isotools_logger as logger
 from ._utils import overlap
 
-logger = logging.getLogger("isotools")
 
 # differential splicing
 def proportion_test(x, n):
@@ -47,67 +47,120 @@ def binom_lr_test(x, n):
     return chi2.sf(2 * (l1 - l0), 1), (p1[0], 0, p1[1], 0, p0, 0)
 
 
-def betabinom_ml(xi,ni):
-    '''Calculate maximum likelihood parameter of beta binomial distribution for a group of samples with xi successes and ni trials. 
+def loglike_betabinom(params, k, n):
+    """returns  log likelihood of betabinomial and its partial derivatives"""
+    a, b = params
+    logpdf = (
+        gammaln(n + 1)
+        + gammaln(k + a)
+        + gammaln(n - k + b)
+        + gammaln(a + b)
+        - (
+            gammaln(k + 1)
+            + gammaln(n - k + 1)
+            + gammaln(a)
+            + gammaln(b)
+            + gammaln(n + a + b)
+        )
+    )
+    e = polygamma(0, a + b) - polygamma(0, n + a + b)
+    da = e + polygamma(0, k + a) - polygamma(0, a)
+    db = e + polygamma(0, n - k + b) - polygamma(0, b)
+    return -np.sum(logpdf), np.array((-np.sum(da), -np.sum(db)))
+
+
+def betabinom_ml(xi, ni):
+    """Calculate maximum likelihood parameter of beta binomial distribution for a group of samples with xi successes and ni trials.
 
     :param xi: number of successes, here coverage of the alternative for all samples of the group as 1d numpy array
     :param ni: number of trials, here total coverage for the two sample groups for all samples of the group as 1d numpy array
-    '''
-    #x and n must be np arrays
-    if sum(ni)==0:
-        params=params_alt=None,None
-        return params,params_alt, False
-    xi, ni=xi[ni>0], ni[ni>0] #avoid div by 0
-    prob=xi/ni    
-    m=prob.mean() #estimate initial parameters
-    d=prob.var()
-    success=True
-    if d==0: #just one sample? or all exactly the same proportion
-        params=params_alt=m,None # in this case the betabinomial reduces to the binomial
+    """
+    # x and n must be np arrays
+    if sum(ni) == 0:
+        params = params_alt = None, None
+        return params, params_alt, False
+    xi, ni = xi[ni > 0], ni[ni > 0]  # avoid div by 0
+    prob = xi / ni
+    m = prob.mean()  # estimate initial parameters
+    d = prob.var()
+    success = True
+    if d == 0:  # just one sample? or all exactly the same proportion
+        params = params_alt = (
+            m,
+            None,
+        )  # in this case the betabinomial reduces to the binomial
     else:
-        d=max(d,1e-6)# to avoid division by 0
-        e=(m**2-m+d) #helper          
-        #find ml estimates for a and b
-        mle = minimize(loglike_betabinom, x0=[-m*e/d,((m-1)*e)/d],bounds=((1e-6,None),(1e-6,None)),  args=(xi,ni),options={'maxiter': 250}, method='L-BFGS-B', jac=True)
-        a,b=params=mle.x
-        params_alt=(a/(a+b),  a*b/((a+b)**2*(a+b+1))) #get alternative parametrization (mu and disp)
-        #mle = minimize(loglike_betabinom2, x0=[-d/(m*e),d/((m-1)*e)],bounds=((1e-9,None),(1e-9,None)),  args=(xi,ni),options={'maxiter': 250}, method='L-BFGS-B', tol=1e-6)
-        #params=([1/p for p in mle.x])
-        params_alt=(a/(a+b),  a*b/((a+b)**2*(a+b+1))) #get alternative parametrization (mu and disp)
+        d = max(d, 1e-6)  # to avoid division by 0
+        e = m ** 2 - m + d  # helper
+        # find ml estimates for a and b
+        mle = minimize(
+            loglike_betabinom,
+            x0=[-m * e / d, ((m - 1) * e) / d],
+            bounds=((1e-6, None), (1e-6, None)),
+            args=(xi, ni),
+            options={"maxiter": 250},
+            method="L-BFGS-B",
+            jac=True,
+        )
+        a, b = params = mle.x
+        params_alt = (
+            a / (a + b),
+            a * b / ((a + b) ** 2 * (a + b + 1)),
+        )  # get alternative parametrization (mu and disp)
+        # mle = minimize(loglike_betabinom2, x0=[-d/(m*e),d/((m-1)*e)],bounds=((1e-9,None),(1e-9,None)),  args=(xi,ni),options={'maxiter': 250}, method='L-BFGS-B', tol=1e-6)
+        # params=([1/p for p in mle.x])
+        params_alt = (
+            a / (a + b),
+            a * b / ((a + b) ** 2 * (a + b + 1)),
+        )  # get alternative parametrization (mu and disp)
 
         if not mle.success:
-            logger.debug(f'no convergence in betabinomial fit: k={xi}\nn={ni}\nparams={params}\nmessage={mle.message}') #should not happen to often, mainly with mu close to boundaries
-            success=False #prevent calculation of p-values based on non optimal parameters
-    return params,params_alt, success
+            logger.debug(
+                f"no convergence in betabinomial fit: k={xi}\nn={ni}\nparams={params}\nmessage={mle.message}"
+            )  # should not happen to often, mainly with mu close to boundaries
+            success = (
+                False  # prevent calculation of p-values based on non optimal parameters
+            )
+    return params, params_alt, success
 
-def betabinom_lr_test(x,n):
-    ''' Likelihood ratio test with random-effects betabinomial model.
+
+def betabinom_lr_test(x, n):
+    """Likelihood ratio test with random-effects betabinomial model.
 
     This test modles x as betabinomial(n,a,b), eg a binomial distribution, where p follows beta ditribution with parameters a,b>0
     mean m=a/(a+b) overdispersion d=ab/((a+b+1)(a+b)^2) --> a=-m(m^2-m+d)/d b=(m-1)(m^2-m+d)/d
     principle: log likelihood ratio of M0/M1 is chi2 distributed
 
     :param x: coverage of the alternative for the two sample groups
-    :param n: total coverage for the two sample groups'''    
+    :param n: total coverage for the two sample groups"""
 
-    
-    if any(ni.sum()==0 for ni in n):
-        return (np.nan,[None, None]) #one group is not covered at all - no test possible. Checking this to avoid RuntimeWarnings (Mean of empty slice)
-    x_all, n_all=(np.concatenate(x),np.concatenate(n))
-    #calculate ml parameters
-    ml_1=betabinom_ml(x[0],n[0])
-    ml_2= betabinom_ml(x[1],n[1])
-    ml_all=betabinom_ml(x_all,n_all)
+    if any(ni.sum() == 0 for ni in n):
+        return (
+            np.nan,
+            [None, None],
+        )  # one group is not covered at all - no test possible. Checking this to avoid RuntimeWarnings (Mean of empty slice)
+    x_all, n_all = (np.concatenate(x), np.concatenate(n))
+    # calculate ml parameters
+    ml_1 = betabinom_ml(x[0], n[0])
+    ml_2 = betabinom_ml(x[1], n[1])
+    ml_all = betabinom_ml(x_all, n_all)
 
-    if not (ml_1[2] and ml_2[2] and ml_all[2]): #check success
+    if not (ml_1[2] and ml_2[2] and ml_all[2]):  # check success
         return np.nan, list(ml_1[1] + ml_2[1] + ml_all[1])
     try:
-        l0 = betabinom_ll(x_all,n_all, *ml_all[0]).sum() 
-        l1 = betabinom_ll(x[0],n[0], *ml_1[0]).sum()+betabinom_ll(x[1],n[1], *ml_2[0]).sum()
+        l0 = betabinom_ll(x_all, n_all, *ml_all[0]).sum()
+        l1 = (
+            betabinom_ll(x[0], n[0], *ml_1[0]).sum()
+            + betabinom_ll(x[1], n[1], *ml_2[0]).sum()
+        )
     except (ValueError, TypeError):
-        logger.critical(f'betabinom error: x={x}\nn={n}\nparams={ml_1[0]}/{ml_2[0]}/{ml_all[0]}')#should not happen
+        logger.critical(
+            f"betabinom error: x={x}\nn={n}\nparams={ml_1[0]}/{ml_2[0]}/{ml_all[0]}"
+        )  # should not happen
         raise
-    return chi2.sf(2*(l1-l0),2), list( ml_1[1] + ml_2[1] + ml_all[1]) #note that we need two degrees of freedom here as h0 hsa two parameters, h1 has 4
+    return chi2.sf(2 * (l1 - l0), 2), list(
+        ml_1[1] + ml_2[1] + ml_all[1]
+    )  # note that we need two degrees of freedom here as h0 hsa two parameters, h1 has 4
 
 
 def betabinom_ll(x, n, a, b):
@@ -124,107 +177,172 @@ TESTS = {
 }
 
 
-def altsplice_test(self,groups, min_total=100,min_alt_fraction=.1, min_n=10, min_sa=.51, test='auto',padj_method='fdr_bh', types=None):
-    '''Performs the alternative splicing event test.
+def altsplice_test(
+    self,
+    groups,
+    min_total=100,
+    min_alt_fraction=0.1,
+    min_n=10,
+    min_sa=0.51,
+    test="auto",
+    padj_method="fdr_bh",
+    types=None,
+):
+    """Performs the alternative splicing event test.
 
     :param groups: Dict with groupnames as keys and lists of samplenames as values, defining the two groups for the test.
-        If more then two groups are provided, test is performed between first two groups, but maximum likelihood parameters 
-        (expected PSI and dispersion) will be computet for the other groups as well. 
+        If more then two groups are provided, test is performed between first two groups, but maximum likelihood parameters
+        (expected PSI and dispersion) will be computet for the other groups as well.
     :param min_total: Minimum total coverage over all selected samples (for both groups combined).
     :param min_alt_fraction: Minimum fraction of reads supporting the alternative (for both groups combined).
     :param min_n: The minimum coverage of the event for an individual sample to be considered for the min_sa filter.
     :param min_sa: The fraction of samples within each group that must be covered by at least min_n reads.
     :param test: The name of one of the implemented statistical tests ('betabinom_lr','binom_lr','proportions').
     :param padj_method: Specify the method for multiple testing correction.
-    :param types: Restrict the analysis on types of events. If ommited, all types are tested.'''
-    #assert len(groups) == 2 , "length of groups should be 2, but found %i" % len(groups)
-    #find groups and sample indices
+    :param types: Restrict the analysis on types of events. If ommited, all types are tested."""
+    # assert len(groups) == 2 , "length of groups should be 2, but found %i" % len(groups)
+    # find groups and sample indices
     if isinstance(groups, dict):
-        groupnames=list(groups)
-        groups=list(groups.values())
-    elif all (isinstance(gn,str) and gn in self.groups() for gn in groups):
-        groupnames=list(groups)
-        groups=[self.groups()[gn] for gn in groupnames]
-    elif all( isinstance(grp,list) for grp in groups):
-        groupnames=['group{i+1}' for i in range(len(groups))]
+        groupnames = list(groups)
+        groups = list(groups.values())
+    elif all(isinstance(gn, str) and gn in self.groups() for gn in groups):
+        groupnames = list(groups)
+        groups = [self.groups()[gn] for gn in groupnames]
+    elif all(isinstance(grp, list) for grp in groups):
+        groupnames = ["group{i+1}" for i in range(len(groups))]
     else:
         raise ValueError("groups not found in dataset")
     notfound = [sa for grp in groups for sa in grp if sa not in self.samples]
     if notfound:
         raise ValueError(f"Cannot find the following samples: {notfound}")
 
-    if isinstance(test,str):
-        if test=='auto':
-            test='betabinom_lr' if min(len(g) for g in groups[:2])>1 else 'proportions'
-        test_name=test
+    if isinstance(test, str):
+        if test == "auto":
+            test = (
+                "betabinom_lr" if min(len(g) for g in groups[:2]) > 1 else "proportions"
+            )
+        test_name = test
         try:
-            test=TESTS[test]
+            test = TESTS[test]
         except KeyError as e:
-            raise ValueError(f'test must be one of {str(list(TESTS))}') from e
+            raise ValueError(f"test must be one of {str(list(TESTS))}") from e
     else:
-        test_name='custom'
-    
-    logger.info('testing differential splicing for %s using %s test',' vs '.join(f'{groupnames[i]} ({len(groups[i])})' for i in range(2)) ,test_name)
-    sa_idx={sa:idx[0] for sa,idx in self._get_sample_idx().items()}
-    grp_idx=[[sa_idx[sa] for sa in grp] for grp in groups]
-    sidx=grp_idx[0]+grp_idx[1]
-    if min_sa<1:
-        min_sa*=sum(len(gr) for gr in groups[:2])
-    res=[]
+        test_name = "custom"
+
+    logger.info(
+        "testing differential splicing for %s using %s test",
+        " vs ".join(f"{groupnames[i]} ({len(groups[i])})" for i in range(2)),
+        test_name,
+    )
+    sa_idx = {sa: idx[0] for sa, idx in self._get_sample_idx().items()}
+    grp_idx = [[sa_idx[sa] for sa in grp] for grp in groups]
+    sidx = grp_idx[0] + grp_idx[1]
+    if min_sa < 1:
+        min_sa *= sum(len(gr) for gr in groups[:2])
+    res = []
     for g in tqdm(self):
         if g.coverage[sidx, :].sum() < min_total:
             continue
-        known={} #check for known events
-        if g.is_annotated and g.n_transcripts: 
-            sg=g.ref_segment_graph
-            #find annotated alternatives for gene (e.g. known events)
-            for _,_,nX,nY, splice_type in sg.find_splice_bubbles(types=types):
-                if splice_type in ("TSS","PAS"):
-                    if (splice_type=="TSS")==(g.strand=="+"):
-                        known.setdefault(splice_type,set()).add((sg[nX].end))
+        known = {}  # check for known events
+        if g.is_annotated and g.n_transcripts:
+            sg = g.ref_segment_graph
+            # find annotated alternatives for gene (e.g. known events)
+            for _, _, nX, nY, splice_type in sg.find_splice_bubbles(types=types):
+                if splice_type in ("TSS", "PAS"):
+                    if (splice_type == "TSS") == (g.strand == "+"):
+                        known.setdefault(splice_type, set()).add((sg[nX].end))
                     else:
                         known.setdefault(splice_type, set()).add((sg[nY].start))
                 else:
-                    known.setdefault(splice_type,set()).add((sg[nX].end,sg[nY].start))
-        sg=g.segment_graph
-        for setA,setB,nX, nY, splice_type in sg.find_splice_bubbles(types=types):
-            
-            junction_cov=g.coverage[:,setB].sum(1)
-            total_cov=g.coverage[:,setA].sum(1)+junction_cov
+                    known.setdefault(splice_type, set()).add((sg[nX].end, sg[nY].start))
+        sg = g.segment_graph
+        for setA, setB, nX, nY, splice_type in sg.find_splice_bubbles(types=types):
+
+            junction_cov = g.coverage[:, setB].sum(1)
+            total_cov = g.coverage[:, setA].sum(1) + junction_cov
             if total_cov[sidx].sum() < min_total:
                 continue
             alt_fraction = junction_cov[sidx].sum() / total_cov[sidx].sum()
             if alt_fraction < min_alt_fraction or alt_fraction > 1 - min_alt_fraction:
                 continue
-            x=[junction_cov[grp] for grp in grp_idx]
-            n=[total_cov[grp] for grp in grp_idx]
-            if sum((ni>=min_n).sum() for ni in n[:2])<min_sa:
+            x = [junction_cov[grp] for grp in grp_idx]
+            n = [total_cov[grp] for grp in grp_idx]
+            if sum((ni >= min_n).sum() for ni in n[:2]) < min_sa:
                 continue
-            pval, params=test(x[:2],n[:2])
-            params_other=tuple(v for xi,ni in zip (x[2:],n[2:]) for v in betabinom_ml(xi,ni)[1]) 
-            if splice_type in ['TSS', 'PAS']:
-                start, end=sg[nX].start, sg[nY].end
-                if (splice_type=="TSS")==(g.strand=="+"):
-                    novel=end not in known.get(splice_type,set())
+            pval, params = test(x[:2], n[:2])
+            params_other = tuple(
+                v for xi, ni in zip(x[2:], n[2:]) for v in betabinom_ml(xi, ni)[1]
+            )
+            if splice_type in ["TSS", "PAS"]:
+                start, end = sg[nX].start, sg[nY].end
+                if (splice_type == "TSS") == (g.strand == "+"):
+                    novel = end not in known.get(splice_type, set())
                 else:
                     novel = start not in known.get(splice_type, set())
             else:
-                start, end=sg[nX].end, sg[nY].start
-                novel=(start, end) not in known.get(splice_type,set())
-            res.append(tuple(itertools.chain((g.name,g.id,g.chrom,g.strand, start, end,splice_type,novel,pval),params ,params_other,
-                (val for lists in zip(x,n) for pair in zip(*lists) for val in pair ))))
-        
-    df=pd.DataFrame(res, columns= (['gene','gene_id','chrom','strand', 'start', 'end','splice_type','novel','pvalue']+ 
-            [gn+part for gn in groupnames[:2]+['total']+groupnames[2:] for part in ['_PSI', '_disp'] ]+  
-            [f'{sa}_{gn}_{w}' for gn,grp in zip(groupnames, groups) for sa in grp for w in ['in_cov', 'total_cov'] ]))
+                start, end = sg[nX].end, sg[nY].start
+                novel = (start, end) not in known.get(splice_type, set())
+            res.append(
+                tuple(
+                    itertools.chain(
+                        (
+                            g.name,
+                            g.id,
+                            g.chrom,
+                            g.strand,
+                            start,
+                            end,
+                            splice_type,
+                            novel,
+                            pval,
+                        ),
+                        params,
+                        params_other,
+                        (
+                            val
+                            for lists in zip(x, n)
+                            for pair in zip(*lists)
+                            for val in pair
+                        ),
+                    )
+                )
+            )
+
+    df = pd.DataFrame(
+        res,
+        columns=(
+            [
+                "gene",
+                "gene_id",
+                "chrom",
+                "strand",
+                "start",
+                "end",
+                "splice_type",
+                "novel",
+                "pvalue",
+            ]
+            + [
+                gn + part
+                for gn in groupnames[:2] + ["total"] + groupnames[2:]
+                for part in ["_PSI", "_disp"]
+            ]
+            + [
+                f"{sa}_{gn}_{w}"
+                for gn, grp in zip(groupnames, groups)
+                for sa in grp
+                for w in ["in_cov", "total_cov"]
+            ]
+        ),
+    )
     try:
         mask = np.isfinite(df["pvalue"])
         padj = np.empty(mask.shape)
-        padj.fill(np.nan) 
-        padj[mask] = multi.multipletests(df.loc[mask,'pvalue'],method=padj_method)[1]
-        df.insert(8,'padj',padj)
-    except TypeError as e: #apparently this happens if df is empty...
-        logger.error(f'unexpected error during calculation of adjusted p-values: {e}' )
+        padj.fill(np.nan)
+        padj[mask] = multi.multipletests(df.loc[mask, "pvalue"], method=padj_method)[1]
+        df.insert(8, "padj", padj)
+    except TypeError as e:  # apparently this happens if df is empty...
+        logger.error(f"unexpected error during calculation of adjusted p-values: {e}")
     return df
 
 
@@ -307,26 +425,37 @@ def alternative_splicing_events(
     for g in self.iter_genes(region, include, remove):
         if g.coverage[sidx, :].sum() < min_total:
             continue
-        known={} #check for known events
-        if g.is_annotated and g.n_transcripts: 
-            sg=g.ref_segment_graph
-            for _,_,nX,nY, splice_type in sg.find_splice_bubbles():#find annotated alternatives (known)
-                if splice_type in ("TSS","PAS"):
-                    if (splice_type=="TSS")==(g.strand=="+"):
-                        known.setdefault(splice_type,set()).add((sg[nX].end))
+        known = {}  # check for known events
+        if g.is_annotated and g.n_transcripts:
+            sg = g.ref_segment_graph
+            for (
+                _,
+                _,
+                nX,
+                nY,
+                splice_type,
+            ) in sg.find_splice_bubbles():  # find annotated alternatives (known)
+                if splice_type in ("TSS", "PAS"):
+                    if (splice_type == "TSS") == (g.strand == "+"):
+                        known.setdefault(splice_type, set()).add((sg[nX].end))
                     else:
                         known.setdefault(splice_type, set()).add((sg[nY].start))
                 else:
-                    known.setdefault(splice_type,set()).add((sg[nX].end,sg[nY].start))
-        sg=g.segment_graph
-        for setA,setB,nX, nY, splice_type in sg.find_splice_bubbles():
-            junction_cov=g.coverage[np.ix_(sidx,setA)].sum(1)
-            total_cov=g.coverage[np.ix_(sidx,setB)].sum(1)+junction_cov
-            if total_cov.sum()>=min_total and min_alt_fraction < junction_cov.sum()/total_cov.sum() < 1-min_alt_fraction:
-                if splice_type in ['TSS', 'PAS']:
-                    start, end=sg[nX].start, sg[nY].end
-                    if (splice_type=="TSS")==(g.strand=="+"):
-                        novel=end not in known.get(splice_type,set())
+                    known.setdefault(splice_type, set()).add((sg[nX].end, sg[nY].start))
+        sg = g.segment_graph
+        for setA, setB, nX, nY, splice_type in sg.find_splice_bubbles():
+            junction_cov = g.coverage[np.ix_(sidx, setA)].sum(1)
+            total_cov = g.coverage[np.ix_(sidx, setB)].sum(1) + junction_cov
+            if (
+                total_cov.sum() >= min_total
+                and min_alt_fraction
+                < junction_cov.sum() / total_cov.sum()
+                < 1 - min_alt_fraction
+            ):
+                if splice_type in ["TSS", "PAS"]:
+                    start, end = sg[nX].start, sg[nY].end
+                    if (splice_type == "TSS") == (g.strand == "+"):
+                        novel = end not in known.get(splice_type, set())
                     else:
                         novel = start not in known.get(splice_type, set())
                 else:

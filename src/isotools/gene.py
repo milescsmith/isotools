@@ -1,14 +1,12 @@
 import copy
-import logging
 
 import numpy as np
 from Bio.Seq import Seq
 from intervaltree import Interval
 
+from .logger import isotools_logger as logger
 from .short_read import Coverage
 from .splice_graph import SegmentGraph
-
-logger = logging.getLogger("isotools")
 
 
 def _eval_filter_fun(fun, name, args):
@@ -31,7 +29,7 @@ class Gene(Interval):
     "This class stores all gene information and transcripts. It is derived from intervaltree.Interval."
     required_infos = ["ID", "name", "chr", "strand"]
 
-    ###initialization
+    # initialization
     def __new__(cls, begin, end, data, transcriptome):
         return super().__new__(
             cls, begin, end, data
@@ -54,8 +52,12 @@ class Gene(Interval):
     def __repr__(self):
         return object.__repr__(self)
 
-    from ._gene_plots import (gene_track, sashimi_figure, sashimi_plot,
-                              sashimi_plot_short_reads)
+    from ._gene_plots import (
+        gene_track,
+        sashimi_figure,
+        sashimi_plot,
+        sashimi_plot_short_reads,
+    )
 
     def short_reads(self, idx):
         """Returns the short read coverage profile for a short read sample.

@@ -1,53 +1,57 @@
 """This module is supposed to as command line script. Its outdated and needs to be adapted to the current api"""
 
-import argparse
-import datetime
-import itertools
-import logging
-import pickle
-
+from pathlib import Path
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
+from typing import List, Optional
+import typer
 
 import isotools
 import isotools.plots
 from isotools.transcriptome import Gene, Transcriptome
 
-log = logging.getLogger("run_isotools")
-log.setLevel(logging.DEBUG)
-log_format = logging.Formatter("%(levelname)s: [%(asctime)s] %(name)s: %(message)s")
-# log_file=logging.FileHandler('logfile.txt')
-log_stream = logging.StreamHandler()
-log_stream.setFormatter(log_format)
-log.handlers = []
-log.addHandler(log_stream)
+from .logger import isotools_logger as logger
 
 
-def load_reference(args):
-    if args.anno is None:
+app = typer.Typer(name="isotools", add_completion=True)
+
+
+def load_reference(
+    anno: Path,
+    pickle: bool = False,
+    force_reload: bool = False,
+    chrom: Optional[List[str]] = None,
+) -> Optional[Transcriptome]:
+    if anno is None:
         return None
-    ref_fn = args.anno
-    if args.pickle and not args.force_reload:
+    if pickle and not force_reload:
         try:
-            return Transcriptome(ref_fn + ".isotools.pkl", chromosomes=args.chrom)
+            return Transcriptome(anno, chromosomes=chrom)
         except FileNotFoundError:
-            log.info("no pickled file found")
-    log.info("importing reference")
-    ref = Transcriptome(ref_fn, chromosomes=args.chrom)
-    if args.pickle:
-        log.info("saving reference as pickle file")
-        ref.save(ref_fn + ".isotools.pkl")
+            logger.info("no pickled file found")
+    logger.info("importing reference")
+    ref = Transcriptome.from_reference(anno, chromosomes=chrom)
+    if pickle:
+        logger.info("saving reference as pickle file")
+        ref.save(anno + ".isotools.pkl")
 
     return ref
 
 
-def load_isoseq(args, reference):
-    if args.pickle and not args.force_reload:
+def load_isoseq(
+    bam: Path,
+    samples: Path,
+    genome: Path,
+    reference: Transcriptome,
+    chrom: Optional[List[str]] = None,
+    pickle: bool = False,
+    force_reload: bool = False,
+) -> Transcriptome:
+    if pickle and not force_reload:
         try:
-            isoseq = Transcriptome(args.bam + "_isotools.pkl", chromosomes=args.chrom)
-            if args.samples:
-                sample_tab = pd.read_csv(args.samples)
+            isoseq = Transcriptome(bam + "_isotools.pkl", chromosomes=chrom)
+            if samples:
+                sample_tab = pd.read_csv(samples)
                 runs = sample_tab["run"].tolist()
                 try:
                     idx = [runs.index(r) for r in isoseq.infos["sample_table"].run]
@@ -59,31 +63,31 @@ def load_isoseq(args, reference):
                     isoseq.infos["sample_table"][col] = sample_tab.loc[idx, col]
             return isoseq
         except FileNotFoundError:
-            log.info("no pickled file found")
-    log.info("importing transcripts from bam file")
-    sample_tab = pd.read_csv(args.samples)
+            logger.info("no pickled file found")
+    logger.info("importing transcripts from bam file")
+    sample_tab = pd.read_csv(samples)
     isoseq = Transcriptome(
-        args.bam, chromosomes=args.chrom, sample_table=sample_tab
+        bam, chromosomes=chrom, sample_table=sample_tab
     )  # todo: genome filename for mutation analysis??
-    log.info("annotating transcripts")
+    logger.info("annotating transcripts")
     isoseq.annotate(reference, fuzzy_junction=9)
     fuzzy = [
         tr["fuzzy_junction"]
-        for g, trid, tr in isoseq.iter_transcripts()
+        for *_, tr in isoseq.iter_transcripts()
         if "fuzzy_junction" in tr
     ]
-    log.info(f"Fixed fuzzy junctions for {len(fuzzy)} transcripts")
+    logger.info(f"Fixed fuzzy junctions for {len(fuzzy)} transcripts")
     # this looks up truncations, junction types, diect repeats at junctions and downstream genomic a content and populates the transcripts biases field
-    log.info("adding bias information")
-    isoseq.add_biases(args.genome)
-    if args.pickle:
-        log.info("saving transcripts as pickle file")
-        isoseq.save(args.bam + "_isotools.pkl")
+    logger.info("adding bias information")
+    isoseq.add_biases(genome)
+    if pickle:
+        logger.info("saving transcripts as pickle file")
+        isoseq.save(bam + "_isotools.pkl")
     return isoseq
 
 
 def filter_plots(isoseq, groups, out_stem):
-    log.info("filter statistics plots")
+    logger.info("filter statistics plots")
     f_stats = []
     f_stats.append(isoseq.filter_stats(isoseq, groups=groups))
     f_stats.append(isoseq.filter_stats(isoseq, groups=groups, coverage=False))
@@ -103,7 +107,7 @@ def filter_plots(isoseq, groups, out_stem):
 
 
 def transcript_plots(isoseq, reference, groups, out_stem):
-    log.info("transcript statistics plots")
+    logger.info("transcript statistics plots")
     tr_stats = [
         isoseq.transcript_coverage_hist(isoseq, groups=groups),
         isoseq.transcript_length_hist(
@@ -140,7 +144,7 @@ def transcript_plots(isoseq, reference, groups, out_stem):
 
 
 def altsplice_plots(isoseq, groups, out_stem):
-    log.info("alternative splicing statistics plots")
+    logger.info("alternative splicing statistics plots")
     altsplice = [
         isoseq.altsplice_stats(isoseq, groups=groups),
         isoseq.altsplice_stats(isoseq, groups=groups, coverage=False),
@@ -185,9 +189,8 @@ def altsplice_examples(
     return {k: v[:n] for k, v in examples.items() if k not in ignore}
 
 
-def plot_altsplice_examples(isoseq, groups, illu_groups, examples, out):
+def plot_altsplice_examples(isoseq, reference, groups, illu_groups, examples, out):
     nplots = len(groups) + 1
-    sample_idx = {r: i for i, r in enumerate(isoseq.infos["sample_table"].name)}
     if illu_groups:
         illu_sample_idx = {r: i for i, r in enumerate(isoseq.infos["illumina_fn"])}
         if any(gn in illu_groups for gn in groups):
@@ -204,8 +207,8 @@ def plot_altsplice_examples(isoseq, groups, illu_groups, examples, out):
     exon_color = "green"
 
     for cat, best_list in examples.items():
-        log.debug(cat + str(best_list))
-        for i, (score, gene_name, trid, ref_id, cov, total_cov) in enumerate(best_list):
+        logger.debug(cat + str(best_list))
+        for i, (_, gene_name, trid, ref_id, cov, total_cov) in enumerate(best_list):
             if ref_id is not None:
                 g = isoseq[ref_id]
             else:
@@ -214,7 +217,7 @@ def plot_altsplice_examples(isoseq, groups, illu_groups, examples, out):
                 info = g.transcripts[trid]["annotation"]["as"][cat]
             except TypeError:
                 info = list()
-            log.info(
+            logger.info(
                 f"{i+1}. best example for {cat}: {gene_name} {trid} {info}, coverage={cov} ({cov/total_cov:%})"
             )
             f, ax = plt.subplots(nplots, 1)
@@ -315,7 +318,6 @@ def plot_altsplice_examples(isoseq, groups, illu_groups, examples, out):
 def plot_diffsplice(isoseq, reference, de_tab, gr, illu_gr, out):
 
     nplots = len(gr) + 1
-    sample_idx = {r: i for i, r in enumerate(isoseq.infos["sample_table"].name)}
     if illu_gr:
         illu_sample_idx = {r: i for i, r in enumerate(isoseq.infos["illumina_fn"])}
         nplots += len(illu_gr)
@@ -329,7 +331,7 @@ def plot_diffsplice(isoseq, reference, de_tab, gr, illu_gr, out):
     plt.rcParams["figure.figsize"] = (20, 5 * nplots)
     for gene_id in de_tab["gene_id"].unique():
         g = isoseq[gene_id]
-        log.info(f"sashimi plot for differentially spliced gene {g.name}")
+        logger.info(f"sashimi plot for differentially spliced gene {g.name}")
         f, ax = plt.subplots(nplots, 1)
         try:
             _ = isotools.stats.gene_track(reference[gene_id], ax=ax[0])
@@ -389,94 +391,88 @@ def plot_diffsplice(isoseq, reference, de_tab, gr, illu_gr, out):
         plt.close()
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        prog="isotools", description="process isoseq bams with isotool"
-    )
-    parser.add_argument(
-        "--bam", metavar="<file.bam>", help="specify isoseq aligned bam", required=True
-    )
-    parser.add_argument(
-        "--anno",
-        metavar="<file.gtf/gff/gff3[.gz]>",
-        help="specify reference annotation",
-        required=True,
-    )
-    parser.add_argument(
-        "--genome", metavar="<file.fasta>", help="specify reference genome file"
-    )
-    parser.add_argument(
-        "--out",
+def main(
+    bam: Path = typer.Argument(
+        ...,
+        metavar="<file.bam>",
+        help="specify isoseq aligned bam",
+    ),
+    anno: Path = typer.Argument(
+        ...,
+        metavar="<file.pkl>",
+        help="specify previously imported reference annotation",
+    ),
+    genome: Path = typer.Argument(
+        ...,
+        metavar="<file.fasta>",
+        help="specify reference genome file",
+    ),
+    out: Path = typer.Option(
+        Path().cwd().joinpath("isotools"),
         metavar="</output/directory/prefix>",
-        default="./isotools",
         help="specify output path and prefix",
-    )
-    parser.add_argument(
-        "--samples",
+    ),
+    samples: Path = typer.Option(
+        ...,
         metavar="<samples.csv>",
         help="specify csv with sample / group information",
-    )
-    parser.add_argument(
-        "--illu_samples",
+    ),
+    illu_samples: Path = typer.Option(
+        ...,
         metavar="<samples.csv>",
         help="specify csv with illumina sample / group information",
-    )
-    parser.add_argument(
-        "--group_by",
+    ),
+    group_by: str = typer.Option(
+        "name",
         metavar="<column name>",
         help="specify column used for grouping the samples",
         default="name",
-    )
-    parser.add_argument(
-        "--pickle", help="pickle/unpickle intermediate results", action="store_true"
-    )
-    parser.add_argument("--qc_plots", help="make qc plots", action="store_true")
-    parser.add_argument(
-        "--altsplice_stats", help="alternative splicing barplots", action="store_true"
-    )
-    parser.add_argument(
-        "--transcript_table", help="make transcript_table", action="store_true"
-    )
-    parser.add_argument("--gtf_out", help="make filtered gtf", action="store_true")
-    parser.add_argument(
-        "--diff",
+    ),
+    pickle: bool = typer.Option(False, help="pickle/unpickle intermediate results"),
+    qc_plots: bool = typer.Option(False, help="make qc plots"),
+    altsplice_stats: bool = typer.Option(False, help="alternative splicing barplots"),
+    transcript_table: bool = typer.Option(False, help="make transcript_table"),
+    gtf_out: bool = typer.Option(False, help="make filtered gtf"),
+    diff: Optional[List[str]] = typer.Option(
+        None,
         metavar="<group1/group2>",
-        nargs="*",
         help="perform differential splicing analysis",
-    )
-    parser.add_argument(
-        "--chrom", nargs="*", help="list of chromosomes to be considered"
-    )
-    parser.add_argument(
-        "--diff_plots",
+    ),
+    chrom: Optional[List[str]] = typer.Option(
+        None, help="list of chromosomes to be considered"
+    ),
+    diff_plots: int = typer.Option(
+        ...,
         metavar="<n>",
-        type=int,
         help="make sashimi plots for <n> top differential genes",
-    )
-    parser.add_argument(
-        "--altsplice_plots",
+    ),
+    altsplice_plots: int = typer.Option(
+        ...,
         metavar="<n>",
-        type=int,
         help="make sashimi plots for <n> top covered alternative spliced genes for each category",
-    )
-    parser.add_argument(
-        "--force_reload",
-        help="reload transcriptomes, even in presence of pickled files",
-        action="store_true",
-    )
+    ),
+    force_reload: bool = typer.Option(
+        False, help="reload transcriptomes, even in presence of pickled files"
+    ),
+) -> None:
 
-    # parser.add_argument("--illumina", nargs='*',type=lambda kv: kv.split('=',2))
-
-    args = parser.parse_args()
-
-    log.debug(f"arguments: {args}")
     # illumina=dict(args.illumina) if args.illumina  else {}
 
-    reference = load_reference(args)
-    isoseq = load_isoseq(args, reference=reference)
-    log.info("adding filter for isoseq")
+    reference = load_reference(
+        anno=anno, pickle=pickle, force_reload=force_reload, chrom=chrom
+    )
+    isoseq = load_isoseq(
+        bam=bam,
+        samples=samples,
+        genome=genome,
+        reference=reference,
+        chrom=chrom,
+        pickle=pickle,
+        force_reload=force_reload,
+    )
+    logger.info("adding filter for isoseq")
     isoseq.add_filter()
-    log.info("adding filter for reference")
+    logger.info("adding filter for reference")
     reference.add_filter(
         transcript_filter={
             "HIGH_SUPPORT": 'transcript_support_level=="1"',
@@ -487,22 +483,22 @@ if __name__ == "__main__":
     reference.make_index()
 
     isoseq.fusion_table().sort_values("total_cov", ascending=False).to_csv(
-        args.out + "_fusion.csv"
+        out + "_fusion.csv"
     )
-    if args.illu_samples:
-        illu_samples = pd.read_csv(args.illu_samples)
+    if illu_samples:
+        illu_samples = pd.read_csv(illu_samples)
         if "illumina_fn" not in isoseq.infos or not all(
             sn in isoseq.infos["illumina_fn"] for sn in illu_samples.name
         ):
             isoseq.add_illumina_coverage(
                 dict(zip(illu_samples["name"], illu_samples["file_name"]))
             )
-            log.info("adding/overwriting illumina coverage")
+            logger.info("adding/overwriting illumina coverage")
             new_illu = True
         else:
             new_illu = False
         illu_groups = {}
-        for cat in ("name", "group", args.group_by):
+        for cat in ("name", "group", group_by):
             if cat in illu_samples:
                 illu_groups.update(dict(illu_samples.groupby(cat)["name"].apply(list)))
         illu_num = {sn: i for i, sn in enumerate(isoseq.infos["illumina_fn"])}
@@ -510,23 +506,23 @@ if __name__ == "__main__":
         new_illu = False
         illu_groups = illu_num = {}
 
-    groups = isoseq.get_sample_idx(args.group_by)
+    groups = isoseq.get_sample_idx(group_by)
     extended_groups = {}
     for d in (
         isoseq.get_sample_idx(col)
-        for col in ("name", "group", args.group_by)
+        for col in ("name", "group", group_by)
         if col in isoseq.infos["sample_table"].columns
     ):
         extended_groups.update(d)
 
-    log.debug(f"sample group definition: {groups}")
-    if args.illu_samples:
-        log.debug(
+    logger.debug(f"sample group definition: {groups}")
+    if illu_samples:
+        logger.debug(
             f'illumina sample group definition: {illu_groups}\n{isoseq.infos["illumina_fn"]}\n{illu_num}'
         )
 
-    if args.transcript_table:
-        log.info(f"writing transcript table to {args.out}_transcripts.csv")
+    if transcript_table:
+        logger.info(f"writing transcript table to {out}_transcripts.csv")
         df = isoseq.transcript_table(
             extra_columns=[
                 "length",
@@ -539,64 +535,62 @@ if __name__ == "__main__":
                 "filter",
             ]
         )
-        df.to_csv(args.out + "_transcripts.csv")
+        df.to_csv(out + "_transcripts.csv")
 
-    if args.gtf_out:
-        log.info(f"writing gtf to {args.out}_transcripts.gtf")
+    if gtf_out:
+        logger.info(f"writing gtf to {out}_transcripts.gtf")
         isoseq.write_gtf(
-            args.out + "_transcripts.gtf",
+            out + "_transcripts.gtf",
             use_gene_name=True,
             remove={"A_CONTENT", "RTTS", "CLIPPED_ALIGNMENT"},
         )
 
-    if args.qc_plots:
-        filter_plots(isoseq, groups, args.out)
-        transcript_plots(isoseq, reference, groups, args.out)
+    if qc_plots:
+        filter_plots(isoseq, groups, out)
+        transcript_plots(isoseq, reference, groups, out)
 
-    if args.altsplice_stats:
-        altsplice_plots(isoseq, groups, args.out)
+    if altsplice_stats:
+        altsplice_plots(isoseq, groups, out)
 
-    if args.altsplice_plots:
-        examples = altsplice_examples(isoseq, args.altsplice_plots)
+    if altsplice_plots:
+        examples = altsplice_examples(isoseq, altsplice_plots)
         # isoseq,reference,groups,illu_groups,examples, out
-        plot_altsplice_examples(
-            isoseq, reference, groups, illu_groups, examples, args.out
-        )
+        plot_altsplice_examples(isoseq, reference, groups, illu_groups, examples, out)
 
-    if args.diff is not None:
-        for diff_cmp in args.diff:
+    if diff is not None:
+        for diff_cmp in diff:
             gr = diff_cmp.split("/")
-            log.debug(f"processing {gr}")
+            logger.debug(f"processing {gr}")
             if len(gr) != 2:
-                log.warn(
+                logger.warn(
                     '--diff argument format error: provide two groups seperated by "/" -- skipping'
                 )
                 continue
             if not all(gn in extended_groups for gn in gr):
-                log.warning(
+                logger.warning(
                     f"--diff argument format error: group names {[gn for gn in gr if gn not in extended_groups]} not found in sample table -- skipping"
                 )
                 continue
             gr = {gn: extended_groups[gn] for gn in gr}
-            log.info(
+            logger.info(
                 f'testing differential splicing in {" vs ".join(gr)}: {" vs ".join(str(len(grp)) for grp in gr.values())} samples'
             )
             res = isotools.stats.altsplice_test(isoseq, list(gr.values())).sort_values(
                 "pvalue"
             )
             sig = res.padj < 0.1
-            log.info(
+            logger.info(
                 f'{sum(sig)} differential splice sites in {len(res.loc[sig,"gene"].unique())} genes for {" vs ".join(gr)}'
             )
-            res.to_csv(f'{args.out}_diff_{"_".join(gr)}.csv', index=False)
-            if args.diff_plots is not None:
+            res.to_csv(f'{out}_diff_{"_".join(gr)}.csv', index=False)
+            if diff_plots is not None:
                 if all(gn in illu_groups or gn in illu_num for gn in gr):
                     illu_gr = {
                         gn: illu_groups[gn] if gn in illu_groups else [gn] for gn in gr
                     }
                 else:
                     illu_gr = illu_groups
-                sig_tab = res.head(args.diff_plots)
+                sig_tab = res.head(diff_plots)
                 if illu_gr:
                     illu_cov = list()
                     for g, jstart, jend in zip(
@@ -631,12 +625,16 @@ if __name__ == "__main__":
                     }
                     sig_tab = sig_tab.assign(**illu_cov)
 
-                sig_tab.to_csv(f'{args.out}_diff_top_{"_".join(gr)}.csv')
+                sig_tab.to_csv(f'{out}_diff_top_{"_".join(gr)}.csv')
                 plot_diffsplice(
-                    isoseq, reference, res.head(args.diff_plots), gr, illu_gr, args.out
+                    isoseq, reference, res.head(diff_plots), gr, illu_gr, out
                 )
-    if args.pickle and new_illu:
-        log.info(
+    if pickle and new_illu:
+        logger.info(
             "saving transcripts as pickle file (including loaded illumina profiles)"
         )
-        isoseq.save(args.bam + "_isotools.pkl")
+        isoseq.save(bam + "_isotools.pkl")
+
+
+if __name__ == "__main__":
+    typer.run(main)

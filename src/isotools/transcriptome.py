@@ -1,14 +1,13 @@
-import logging
-import os
 import pickle
+from pathlib import Path
+from typing import Union
 
 import pandas as pd
 from intervaltree import IntervalTree  # , Interval
 
+from .logger import isotools_logger as logger
 from ._transcriptome_io import import_gff_transcripts, import_gtf_transcripts
 from .gene import Gene
-
-logger = logging.getLogger("isotools")
 
 # as this class has diverse functionality, its split among:
 # transcriptome.py (this file- initialization and user level basic functions)
@@ -23,7 +22,7 @@ class Transcriptome:
 
     :param pickle_file: Filename to restore previous data"""
 
-    #####initialization and save/restore data
+    # initialization and save/restore data
     def __new__(cls, pickle_file=None, **kwargs):
         if pickle_file is not None:
             obj = cls.load(pickle_file)
@@ -44,7 +43,7 @@ class Transcriptome:
 
     @classmethod
     def from_reference(
-        cls, reference_file, file_format="auto", **kwargs
+        cls, reference_file: Union[Path, str], file_format="auto", **kwargs
     ) -> "Transcriptome":
         """Creates a Transcriptome object by importing reference annotation.
 
@@ -53,18 +52,21 @@ class Transcriptome:
         :param file_format: Specify the file format of the provided reference_file.
             If set to "auto" the file type is infrered from the extension."""
         tr = cls.__new__(cls)
+
+        if isinstance(reference_file, str):
+            reference_file = Path(reference_file)
         tr.infos = {"reference_file": reference_file}
         tr.chimeric = {}
         if file_format == "auto":
-            file_format = os.path.splitext(reference_file)[1].lstrip(".")
-            if file_format == "gz":
-                file_format = os.path.splitext(reference_file[:-3])[1].lstrip(".")
+            file_format = reference_file.suffix
+            if file_format == ".gz":
+                file_format = Path(reference_file.stem).suffix
         logger.info(f"importing reference from {file_format} file {reference_file}")
-        if file_format == "gtf":
+        if file_format == ".gtf":
             tr.data = import_gtf_transcripts(reference_file, tr, **kwargs)
-        elif file_format in ("gff", "gff3"):
+        elif file_format in (".gff", ".gff3"):
             tr.data = import_gff_transcripts(reference_file, tr, **kwargs)
-        elif file_format == "pkl":
+        elif file_format == ".pkl":
             tr = pickle.load(open(reference_file, "rb"))
             if [k for k in tr.infos if k != "reference_file"]:
                 logger.warning(
@@ -72,7 +74,7 @@ class Transcriptome:
                 )
                 tr = tr._extract_reference()
         else:
-            logger.error("unknown file format %s", file_format)
+            logger.error(f"unknown file format {file_format}")
         return tr
 
     def save(self, pickle_file=None):
@@ -83,7 +85,7 @@ class Transcriptome:
             pickle_file = (
                 self.infos["out_file_name"] + ".isotools.pkl"
             )  # key error if not set
-        logger.info("saving transcriptome to " + pickle_file)
+        logger.info(f"saving transcriptome to {pickle_file}")
         pickle.dump(self, open(pickle_file, "wb"))
 
     @classmethod
@@ -92,7 +94,7 @@ class Transcriptome:
 
         :param pickle_file: Filename to restore data"""
 
-        logger.info("loading transcriptome from " + pickle_file)
+        logger.info(f"loading transcriptome from {pickle_file}")
         return pickle.load(open(pickle_file, "rb"))
 
     def save_reference(self, pickle_file=None):
@@ -199,14 +201,14 @@ class Transcriptome:
     @property
     def n_transcripts(self) -> int:
         """The total number of transcripts isoforms."""
-        if self.data == None:
+        if self.data is None:
             return 0
         return sum(g.n_transcripts for g in self)
 
     @property
     def n_genes(self) -> int:
         """The total number of genes."""
-        if self.data == None:
+        if self.data is None:
             return 0
         return sum((len(t) for t in self.data.values()))
 
@@ -237,25 +239,45 @@ class Transcriptome:
 
     ### IO: load new data from primary data files
     ### filtering functionality and iterators
-    from ._transcriptome_filter import (add_filter, add_qc_metrics, iter_genes,
-                                        iter_ref_transcripts, iter_transcripts)
+    from ._transcriptome_filter import (
+        add_filter,
+        add_qc_metrics,
+        iter_genes,
+        iter_ref_transcripts,
+        iter_transcripts,
+    )
+
     ### IO: output data as tables or other human readable format
     ### IO: utility functions
-    from ._transcriptome_io import (_add_chimeric, _add_novel_genes,
-                                    _add_sample_transcript, _get_intersects,
-                                    add_sample_from_bam,
-                                    add_short_read_coverage, chimeric_table,
-                                    collapse_immune_genes,
-                                    export_alternative_splicing, gene_table,
-                                    remove_samples, remove_short_read_coverage,
-                                    transcript_table, write_gtf)
+    from ._transcriptome_io import (
+        _add_chimeric,
+        _add_novel_genes,
+        _add_sample_transcript,
+        _get_intersects,
+        add_sample_from_bam,
+        add_short_read_coverage,
+        chimeric_table,
+        collapse_immune_genes,
+        export_alternative_splicing,
+        gene_table,
+        remove_samples,
+        remove_short_read_coverage,
+        transcript_table,
+        write_gtf,
+    )
+
     # statistic: summary tables (can be used as input to plot_bar / plot_dist)
     ### statistic: differential splicing, alternative_splicing_events
-    from ._transcriptome_stats import (alternative_splicing_events,
-                                       altsplice_stats, altsplice_test,
-                                       direct_repeat_hist, downstream_a_hist,
-                                       exons_per_transcript_hist, filter_stats,
-                                       splice_dependence_test,
-                                       transcript_coverage_hist,
-                                       transcript_length_hist,
-                                       transcripts_per_gene_hist)
+    from ._transcriptome_stats import (
+        alternative_splicing_events,
+        altsplice_stats,
+        altsplice_test,
+        direct_repeat_hist,
+        downstream_a_hist,
+        exons_per_transcript_hist,
+        filter_stats,
+        splice_dependence_test,
+        transcript_coverage_hist,
+        transcript_length_hist,
+        transcripts_per_gene_hist,
+    )

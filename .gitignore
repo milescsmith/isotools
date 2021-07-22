@@ -162,3 +162,7 @@ src/*.egg-info
 !/docs/notebooks/ENCODE_S2.ipynb
 !/docs/notebooks/encode_samples.tsv
 /docs/_build
+
+*.csv
+*.png
+*.pkl

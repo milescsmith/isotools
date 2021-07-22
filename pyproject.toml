@@ -1,14 +1,12 @@
 [tool.poetry]
 name = "isotools"
-version = "0.1.4rc3"
+version = "0.2.0"
 description = "Framework for the analysis of long read transcriptome sequencing data"
 authors = ["Matthias Lienhard <lienhard@molgen.mpg.de>"]
 license = "MIT"
 readme = "README.md"
-
 repository = "https://github.molgen.mpg.de/lienhard/isotools"
 homepage = "http://medips.molgen.mpg.de/isoseq/index.html"
-
 classifiers = [
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
@@ -32,6 +30,8 @@ umap-learn = "^0.5.1"
 sklearn = "^0.0"
 scipy = "^1.7.0"
 statsmodels = "^0.12.2"
+coloredlogs = "^15.0.1"
+typer = "^0.3.2"
 
 [tool.poetry.dev-dependencies]
 black = "^21.6b0"

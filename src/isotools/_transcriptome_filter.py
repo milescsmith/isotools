@@ -3,7 +3,7 @@ import logging
 from pysam import AlignmentFile, FastaFile, TabixFile
 from tqdm import tqdm
 
-logger = logging.getLogger("isotools")
+from .logger import isotools_logger as logger
 
 DEFAULT_GENE_FILTER = {
     "NOVEL_GENE": "not reference",
@@ -19,9 +19,9 @@ DEFAULT_REF_TRANSCRIPT_FILTER = {
 }
 """Default definitions for reference transcript filter, as used in iosotools.Transcriptome.add_filters()."""
 
-#:Default definitions for transcript filter, as used in iosotools.Transcriptome.add_filters()
+# :Default definitions for transcript filter, as used in iosotools.Transcriptome.add_filters()
 DEFAULT_TRANSCRIPT_FILTER = {
-    #'CLIPPED_ALIGNMENT':'clipping',
+    # 'CLIPPED_ALIGNMENT':'clipping',
     "INTERNAL_PRIMING": "len(exons)==1 and downstream_A_content and downstream_A_content>.5",  # more than 50% a
     "RTTS": "noncanonical_splicing and novel_splice_sites and any(2*i in novel_splice_sites[0] and 2*i+1 in novel_splice_sites[0] for i,_ in noncanonical_splicing)",
     "NONCANONICAL_SPLICING": "noncanonical_splicing",
@@ -56,6 +56,7 @@ ANNOTATION_VOCABULARY = [
 ]
 """Controlled vocabulary for filtering by novel alternative splicing."""
 
+
 # filtering functions for the transcriptome class
 def add_qc_metrics(self, genome_fn):
     """Retrieves QC metrics for the transcripts.
@@ -73,7 +74,7 @@ def add_qc_metrics(self, genome_fn):
                 f"{len(missing_chr)} contigs are not contained in genome, affecting {missing_genes} genes. Some metrics cannot be computed: {missing_chr}"
             )
 
-        for g in tqdm(self):
+        for g in tqdm(self, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}'):
             g.add_fragments()
             if g.chrom in genome_fh.references:
                 g.add_direct_repeat_len(genome_fh)
@@ -128,7 +129,7 @@ def add_filter(
         label: _filter_function(ref_tr_attributes, fun)
         for label, fun in ref_transcript_filter.items()
     }
-    for g in tqdm(self):
+    for g in tqdm(self, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}'):
         g.add_filter(gene_ffun, tr_ffun, reftr_ffun)
     self.infos["filter"] = {
         "gene_filter": gene_filter,
