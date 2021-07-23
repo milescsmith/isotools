@@ -942,7 +942,7 @@ def import_gff_transcripts(
     """import transcripts from gff file (e.g. for a reference)
     returns a dict interval trees for the genes"""
     # file_size=os.path.getsize(fn) # does not help for eat
-    gff = TabixFile(fn)
+    gff = TabixFile(str(fn))
     chrom_ids = get_gff_chrom_dict(gff, chromosomes)
     exons = dict()  # transcript id -> exons
     transcripts = dict()  # gene_id -> transcripts
