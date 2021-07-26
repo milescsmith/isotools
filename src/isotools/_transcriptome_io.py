@@ -9,7 +9,7 @@ from intervaltree import Interval, IntervalTree
 from pysam import AlignmentFile, FastaFile, TabixFile
 from tqdm import tqdm
 
-from .logger import isotools_logger as logger
+from isotools.logger import isotools_logger as logger
 from ._utils import (
     cigar_string2tuples,
     is_same_gene,

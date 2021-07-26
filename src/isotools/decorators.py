@@ -1,6 +1,6 @@
 import functools
 
-from .logger import isotools_logger as logger
+from isotools.logger import isotools_logger as logger
 
 # warn unsave functions
 

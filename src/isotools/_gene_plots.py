@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.ticker import FuncFormatter
 
-from .logger import isotools_logger as logger
+from isotools.logger import isotools_logger as logger
 
 
 def _label_overlap(pos1, pos2, width, height):

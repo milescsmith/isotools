@@ -10,7 +10,7 @@ import isotools
 import isotools.plots
 from isotools.transcriptome import Gene, Transcriptome
 
-from .logger import isotools_logger as logger
+from isotools.logger import isotools_logger as logger
 
 
 app = typer.Typer(name="isotools", add_completion=True)
@@ -422,12 +422,7 @@ def main(
         metavar="<samples.csv>",
         help="specify csv with illumina sample / group information",
     ),
-    group_by: str = typer.Option(
-        "name",
-        metavar="<column name>",
-        help="specify column used for grouping the samples",
-        default="name",
-    ),
+    group_by: str = typer.Option("name",metavar="<column name>",help="specify column used for grouping the samples",),
     pickle: bool = typer.Option(False, help="pickle/unpickle intermediate results"),
     qc_plots: bool = typer.Option(False, help="make qc plots"),
     altsplice_stats: bool = typer.Option(False, help="alternative splicing barplots"),

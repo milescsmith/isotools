@@ -5,7 +5,7 @@ from typing import Union
 import pandas as pd
 from intervaltree import IntervalTree  # , Interval
 
-from .logger import isotools_logger as logger
+from isotools.logger import isotools_logger as logger
 from ._transcriptome_io import import_gff_transcripts, import_gtf_transcripts
 from .gene import Gene
 

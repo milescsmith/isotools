@@ -7,7 +7,7 @@ import scipy.stats as stats
 from sortedcontainers import SortedDict  # for SpliceGraph
 from tqdm import tqdm
 
-from .logger import isotools_logger as logger
+from isotools.logger import isotools_logger as logger
 from ._utils import overlap, pairwise
 from .decorators import deprecated, experimental
 

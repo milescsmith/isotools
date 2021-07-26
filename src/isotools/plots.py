@@ -5,7 +5,7 @@ import seaborn as sns
 from matplotlib.colors import is_color_like, to_hex
 from scipy.stats import beta, nbinom
 
-from .logger import isotools_logger as logger
+from isotools.logger import isotools_logger as logger
 
 
 def plot_diff_results(

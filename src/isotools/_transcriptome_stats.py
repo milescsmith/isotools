@@ -15,7 +15,7 @@ from scipy.stats import (
 )
 from tqdm import tqdm
 
-from .logger import isotools_logger as logger
+from isotools.logger import isotools_logger as logger
 from ._utils import overlap
 
 

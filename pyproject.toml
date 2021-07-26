@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "isotools"
-version = "0.2.0"
+version = "0.3.0"
 description = "Framework for the analysis of long read transcriptome sequencing data"
 authors = ["Matthias Lienhard <lienhard@molgen.mpg.de>"]
 license = "MIT"
@@ -39,6 +39,7 @@ pyre-check = "^0.9.3"
 flake8 = "^3.9.2"
 mypy = "^0.910"
 isort = "^5.9.1"
+jupyterlab = "^3.0.16"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

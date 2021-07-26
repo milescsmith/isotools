@@ -4,7 +4,7 @@ import numpy as np
 from Bio.Seq import Seq
 from intervaltree import Interval
 
-from .logger import isotools_logger as logger
+from isotools.logger import isotools_logger as logger
 from .short_read import Coverage
 from .splice_graph import SegmentGraph
 
