@@ -129,7 +129,7 @@ def add_filter(
         label: _filter_function(ref_tr_attributes, fun)
         for label, fun in ref_transcript_filter.items()
     }
-    for g in tqdm(self, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}'):
+    for g in tqdm(self):
         g.add_filter(gene_ffun, tr_ffun, reftr_ffun)
     self.infos["filter"] = {
         "gene_filter": gene_filter,
