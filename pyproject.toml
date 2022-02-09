@@ -17,7 +17,7 @@ classifiers = [
 "isotools" = "isotools.run_isotools:main"
 
 [tool.poetry.dependencies]
-python = ">=3.7.1,<3.10"
+python = ">=3.8,<3.10"
 numpy = "^1.21.0"
 pandas = "^1.2.5"
 tqdm = "^4.61.1"
@@ -32,6 +32,7 @@ scipy = "^1.7.0"
 statsmodels = "^0.12.2"
 coloredlogs = "^15.0.1"
 typer = "^0.3.2"
+gtfparse = {git = "https://github.com/milescsmith/gtfparse", rev = "main"}
 
 [tool.poetry.dev-dependencies]
 black = "^21.6b0"
@@ -40,6 +41,8 @@ flake8 = "^3.9.2"
 mypy = "^0.910"
 isort = "^5.9.1"
 jupyterlab = "^3.0.16"
+gffpandas = "^1.2.0"
+xeus-python = "^0.12.5"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
